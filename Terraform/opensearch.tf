@@ -18,17 +18,17 @@ resource "opensearch_index" "products_main" {
 
   mappings = jsonencode({
     properties = {
-      parent_asin     = { type = "keyword" }
-      title           = { type = "text" }
-      store           = { type = "keyword" }
-      main_category   = { type = "keyword" }
-      categories      = { type = "keyword" }
-      price           = { type = "float" }
-      average_rating  = { type = "float" }
-      rating_number   = { type = "integer" }
-      features        = { type = "text" }
-      description     = { type = "text" }
-      details         = { type = "object" }
+      parent_asin    = { type = "keyword" }
+      title          = { type = "text" }
+      store          = { type = "keyword" }
+      main_category  = { type = "keyword" }
+      categories     = { type = "keyword" }
+      price          = { type = "float" }
+      average_rating = { type = "float" }
+      rating_number  = { type = "integer" }
+      features       = { type = "text" }
+      description    = { type = "text" }
+      details        = { type = "object" }
       embedding = {
         type      = "knn_vector"
         dimension = 1024
@@ -42,6 +42,7 @@ resource "opensearch_index" "products_main" {
   })
 
   depends_on = [aws_opensearch_domain.rag_db]
+  force_destroy = true
 }
 
 resource "opensearch_index" "products_images" {
@@ -65,6 +66,7 @@ resource "opensearch_index" "products_images" {
   })
 
   depends_on = [aws_opensearch_domain.rag_db]
+  force_destroy = true
 }
 
 resource "opensearch_index" "products_videos" {
@@ -90,4 +92,5 @@ resource "opensearch_index" "products_videos" {
   })
 
   depends_on = [aws_opensearch_domain.rag_db]
+  force_destroy = true
 }

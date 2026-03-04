@@ -1,0 +1,6 @@
+numpy
+boto3
+pandas
+opensearch-py
+requests
+requests-aws4auth
