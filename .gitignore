@@ -43,4 +43,4 @@ fabric.properties
 
 *.zip
 
-Resources/lambda_libraries/*
+Resources/lambda_libraries/
