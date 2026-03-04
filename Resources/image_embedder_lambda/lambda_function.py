@@ -3,6 +3,7 @@ import json
 import logging
 import os
 
+import time
 import boto3
 import httpx
 import numpy as np
@@ -124,23 +125,26 @@ def get_opensearch_client(opensearch_url):
     )
 
 
-def push_documents_to_opensearch(client, documents):
-    actions = [
-        {
-            "_index":  IMAGE_INDEX_NAME,
-            "_id":     doc["doc_id"],
-            "_source": doc,
-        }
-        for doc in documents
-    ]
-    if not actions:
-        logger.info("No documents to index.")
-        return
+def push_documents_to_opensearch(client, documents, chunk_size=100, delay=0.5):
+    for i in range(0, len(documents), chunk_size):
+        chunk = documents[i:i + chunk_size]
+        actions = [
+            {
+                "_index":  IMAGE_INDEX_NAME,
+                "_id":     doc["doc_id"],
+                "_source": doc,
+            }
+            for doc in chunk
+        ]
+        if not actions:
+            logger.info("No documents to index.")
+            return
 
-    success, errors = bulk(client, actions, raise_on_error=False)
-    logger.info(f"Indexed: {success} | Failed: {len(errors)}")
-    if errors:
-        logger.error(f"Bulk indexing errors: {errors}")
+        success, errors = bulk(client, actions, raise_on_error=False, max_retries=3, initial_backoff=2, max_backoff=10)
+        logger.info(f"Chunk {i // chunk_size + 1}: indexed {success} | failed {len(errors)}")
+        if errors:
+            logger.error(f"Bulk indexing errors: {errors}")
+        time.sleep(delay)
 
 
 # --- Lambda Handler ---

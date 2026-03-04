@@ -46,3 +46,36 @@ resource "aws_iam_role_policy" "general_lambda_policy" {
     ]
   })
 }
+
+# Step Functions execution role
+resource "aws_iam_role" "step_functions_role" {
+  name = "${local.application_name}-step-functions-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "states.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "step_functions_invoke_lambda" {
+  name = "${local.application_name}-step-functions-invoke-lambda"
+  role = aws_iam_role.step_functions_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = [
+          aws_lambda_function.text_embedder_lambda_function.arn,
+          aws_lambda_function.image_embedder_lambda_function.arn
+        ]
+      }
+    ]
+  })
+}

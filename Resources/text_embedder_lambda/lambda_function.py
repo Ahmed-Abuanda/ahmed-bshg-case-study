@@ -100,7 +100,10 @@ def get_opensearch_client(opensearch_url):
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
-        pool_maxsize=20
+        pool_maxsize=20,
+        timeout=300,
+        max_retries=3,
+        retry_on_timeout=True
     )
 
 def push_data_to_opensearch(client, processed_data, chunk_size=100, delay=0.5):
