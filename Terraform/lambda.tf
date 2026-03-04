@@ -102,7 +102,45 @@ resource "aws_lambda_function" "image_embedder_lambda_function" {
   }
 
   depends_on = [
-    data.archive_file.text_embedder_lambda_files,
+    data.archive_file.image_embedder_lambda_files,
+    aws_lambda_layer_version.universal_lambda_layer
+  ]
+}
+
+data "archive_file" "invoke_agent_lambda_files" {
+  type        = "zip"
+  source_dir  = "${path.root}/../Resources/invoke_agent_lambda/"
+  excludes    = ["requirements.txt"]
+  output_path = "${path.root}/invoke_agent_lambda.zip"
+}
+
+resource "aws_lambda_function" "invoke_agent_lambda_function" {
+  function_name = "${local.application_name}-invoke-agent"
+
+  role = aws_iam_role.general_lambda_role.arn
+
+  filename         = data.archive_file.invoke_agent_lambda_files.output_path
+  source_code_hash = data.archive_file.invoke_agent_lambda_files.output_base64sha256
+
+  runtime     = "python${var.python_version}"
+  handler     = "lambda_function.lambda_handler"
+  timeout     = 120
+  memory_size = 512
+
+  layers = [aws_lambda_layer_version.universal_lambda_layer.arn]
+
+  environment {
+    variables = {
+      OPENSEARCH_DOMAIN = aws_opensearch_domain.rag_db.endpoint
+      MAIN_INDEX_NAME   = opensearch_index.products_main.name
+      IMAGE_INDEX_NAME  = opensearch_index.products_images.name
+      EMBEDDING_MODEL   = "amazon.titan-embed-text-v2:0"
+      AGENT_MODEL       = "eu.amazon.nova-lite-v1:0"
+    }
+  }
+
+  depends_on = [
+    data.archive_file.invoke_agent_lambda_files,
     aws_lambda_layer_version.universal_lambda_layer
   ]
 }
