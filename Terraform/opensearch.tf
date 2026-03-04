@@ -15,7 +15,7 @@ resource "aws_opensearch_domain" "rag_db" {
 
 resource "opensearch_index" "products_main" {
   name = "products_main"
-
+  index_knn = true
   mappings = jsonencode({
     properties = {
       parent_asin    = { type = "keyword" }
@@ -47,6 +47,7 @@ resource "opensearch_index" "products_main" {
 
 resource "opensearch_index" "products_images" {
   name = "products_images"
+  index_knn = true
 
   mappings = jsonencode({
     properties = {
@@ -71,6 +72,7 @@ resource "opensearch_index" "products_images" {
 
 resource "opensearch_index" "products_videos" {
   name = "products_videos"
+  index_knn = true
 
   mappings = jsonencode({
     properties = {

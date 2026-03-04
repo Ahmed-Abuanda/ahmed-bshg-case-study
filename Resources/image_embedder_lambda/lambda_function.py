@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 from opensearchpy.helpers import bulk
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Logging ---
 logger = logging.getLogger()
@@ -121,7 +122,10 @@ def get_opensearch_client(opensearch_url):
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
-        pool_maxsize=20
+        pool_maxsize=20,
+        timeout=300,
+        max_retries=3,
+        retry_on_timeout=True
     )
 
 
@@ -171,8 +175,7 @@ def lambda_handler(event, context):
     rows_with_images = df[df["images"].notna()]
     logger.info(f"Rows with images: {len(rows_with_images)}")
 
-    documents = []
-    failed = 0
+    image_tasks = []
     for _, row in rows_with_images.iterrows():
         parent_asin = row.get("parent_asin", "unknown")
         images = row["images"]
@@ -184,17 +187,31 @@ def lambda_handler(event, context):
         for image_data in images:
             if not isinstance(image_data, dict):
                 continue
-            if image_data.get("variant","UNKNOWN") == "MAIN":
-                try:
-                    doc = build_image_document(parent_asin, image_data)
-                    if doc:
-                        documents.append(doc)
-                except Exception as e:
-                    failed += 1
-                    logger.error(
-                        f"[{parent_asin}] Failed to process image "
-                        f"{image_data.get('large', 'N/A')}: {e}"
-                    )
+            if image_data.get("variant", "UNKNOWN") == "MAIN":
+                image_tasks.append((parent_asin, image_data))
+
+    logger.info(f"Found {len(image_tasks)} images to process")
+
+    documents = []
+    failed = 0
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {
+            executor.submit(build_image_document, parent_asin, image_data): (parent_asin, image_data)
+            for parent_asin, image_data in image_tasks
+        }
+        for future in as_completed(futures):
+            parent_asin, image_data = futures[future]
+            try:
+                doc = future.result()
+                if doc:
+                    documents.append(doc)
+            except Exception as e:
+                failed += 1
+                logger.error(
+                    f"[{parent_asin}] Failed to process image "
+                    f"{image_data.get('large', 'N/A')}: {e}"
+                )
 
     logger.info(f"Processing complete — succeeded: {len(documents)} | failed: {failed}")
 
