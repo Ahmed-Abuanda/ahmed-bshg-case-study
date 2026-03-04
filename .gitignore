@@ -40,3 +40,7 @@ crashlytics-build.properties
 fabric.properties
 
 .DS_Store
+
+*.zip
+
+Resources/lambda_libraries/*
