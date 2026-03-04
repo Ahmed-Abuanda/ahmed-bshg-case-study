@@ -173,7 +173,6 @@ def lambda_handler(event, context):
 
     documents = []
     failed = 0
-
     for _, row in rows_with_images.iterrows():
         parent_asin = row.get("parent_asin", "unknown")
         images = row["images"]
@@ -185,16 +184,17 @@ def lambda_handler(event, context):
         for image_data in images:
             if not isinstance(image_data, dict):
                 continue
-            try:
-                doc = build_image_document(parent_asin, image_data)
-                if doc:
-                    documents.append(doc)
-            except Exception as e:
-                failed += 1
-                logger.error(
-                    f"[{parent_asin}] Failed to process image "
-                    f"{image_data.get('large', 'N/A')}: {e}"
-                )
+            if image_data.get("variant","UNKNOWN") == "MAIN":
+                try:
+                    doc = build_image_document(parent_asin, image_data)
+                    if doc:
+                        documents.append(doc)
+                except Exception as e:
+                    failed += 1
+                    logger.error(
+                        f"[{parent_asin}] Failed to process image "
+                        f"{image_data.get('large', 'N/A')}: {e}"
+                    )
 
     logger.info(f"Processing complete — succeeded: {len(documents)} | failed: {failed}")
 
