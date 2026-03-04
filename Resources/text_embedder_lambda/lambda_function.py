@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import boto3
 import pandas as pd
+import time
 from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 from opensearchpy.helpers import bulk
 
@@ -102,20 +103,13 @@ def get_opensearch_client(opensearch_url):
         pool_maxsize=20
     )
 
-def push_data_to_opensearch(client, processed_data):
-    actions = []
-    for document in processed_data:
-        actions.append({
-            "_index":  MAIN_INDEX_NAME,
-            "_id":     document.get("parent_asin"),
-            "_source": document
-        })
-    if actions:
-        success, errors = bulk(client, actions, raise_on_error=False)
-        logger.info(f"Indexed: {success} | Failed: {len(errors)}")
-        if errors:
-            logger.error(f"Bulk indexing errors: {errors}")
-
+def push_data_to_opensearch(client, processed_data, chunk_size=100, delay=0.5):
+    for i in range(0, len(processed_data), chunk_size):
+        chunk = processed_data[i:i + chunk_size]
+        actions = [{"_index": MAIN_INDEX_NAME, "_id": d.get("parent_asin"), "_source": d} for d in chunk]
+        success, errors = bulk(client, actions, raise_on_error=False, max_retries=3, initial_backoff=2, max_backoff=10)
+        logger.info(f"Chunk {i // chunk_size + 1}: indexed {success} | failed {len(errors)}")
+        time.sleep(delay)
 
 # --- Lambda Handler ---
 
@@ -126,7 +120,7 @@ def lambda_handler(event, context):
 
     # 2. load the file from s3
     response = s3.get_object(Bucket=S3_BUCKET, Key=json_file)
-    file_content = response["Body"].read().decode("utf-8")
+    file_content = response["Body"].read().decode("utf-16")
 
     # handles both json lines (.jsonl) and json array formats
     try:

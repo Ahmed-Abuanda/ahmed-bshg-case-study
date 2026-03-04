@@ -4,3 +4,4 @@ pandas
 opensearch-py
 requests
 requests-aws4auth
+httpx

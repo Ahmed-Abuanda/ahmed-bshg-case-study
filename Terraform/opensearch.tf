@@ -41,7 +41,7 @@ resource "opensearch_index" "products_main" {
     }
   })
 
-  depends_on = [aws_opensearch_domain.rag_db]
+  depends_on    = [aws_opensearch_domain.rag_db]
   force_destroy = true
 }
 
@@ -65,7 +65,7 @@ resource "opensearch_index" "products_images" {
     }
   })
 
-  depends_on = [aws_opensearch_domain.rag_db]
+  depends_on    = [aws_opensearch_domain.rag_db]
   force_destroy = true
 }
 
@@ -91,6 +91,6 @@ resource "opensearch_index" "products_videos" {
     }
   })
 
-  depends_on = [aws_opensearch_domain.rag_db]
+  depends_on    = [aws_opensearch_domain.rag_db]
   force_destroy = true
 }
