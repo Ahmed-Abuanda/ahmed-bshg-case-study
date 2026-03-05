@@ -6,11 +6,117 @@
 
 This repository contains the solution for the Senior Data Scientist Case Study for BSHG solved by me, Ahmed Abunada. Overall the problem is the development and building of a RAG system that is used to communicate with product data and avoid any hallucinations when retrieving data. My Solution is a **complete cloud** implementation, meaning the entire end to end project leverages and runs on AWS, using resources, processes and technologies to implement successfully.
 
-The solution works to gain the most information from 
+The solution works to gain the most information from the data by splitting the data into 3 separate parts:
+* Text Data
+* Image Data
+* Video Data
+
+The reason for doing this is that any potential questions that describe its shape or uses might be better described in a picture/video, and the agent will be able to search specifically among what it needs. With this approach, separate embeddings are created for text, images and videos.
+
+
 
 
 ### Repository Structure
 
+```
+ahmed-bshg-case-study/
+├── README.md
+├── SeniorDataScientistCaseStudy.pdf
+├── Analysis/
+│   └── Full Analysis.ipynb
+├── Data/
+│   └── data.jsonl
+├── Resources/
+│   ├── requirements.txt
+│   ├── lambda_libraries/.../
+│   ├── image_embedder_lambda/
+│   │   └── lambda_function.py
+│   ├── invoke_agent_lambda/
+│   │   └── lambda_function.py
+│   └── text_embedder_lambda/
+│       └── lambda_function.py
+└── Terraform/
+    ├── main.tf
+    ├── variables.tf
+    ├── terraform.tf
+    ├── api_gateway.tf
+    ├── iam.tf
+    ├── lambda.tf
+    ├── opensearch.tf
+    ├── s3.tf
+    └── step_functions.tf
+```
+
+The repository is split into 4 main sections:
+1. **Analysis Notebook:** A jupyter notebook with all the EDA and initial scripts written for all of the functions and tools used, found under Analysis/
+2. **Lambda Functions:** Code for all 3 lambda functions used in the project, stored under Resources/ along with their requirements and packages
+3. **Data:** Directory to store data and documentation resources
+4. **Terraform Project:** Terraform files that are used to build resources on AWS, the backend is currently set to local.
+
+### Technology Stack & Justifications
+
+#### Cloud Provider
+The cloud provider selected for this project is AWS, this is mainly due to personal preference as I have extensive experience using AWS, as well its resources align greatly with project requirements. The resources used in AWS are:
+* Opensearch Vector DB
+* Bedrock Models
+* Lambda Functions
+* API Gateway
+* Step Functions
+* *among others*...
+
+#### Vector Database
+The vector database selected is the AWS OpenSearch Service, which is an AWS managed service that lets us run and scale OpenSearch clusters with strong analytical capabilities. The reasons this was chosen for our vector DB, especially for **KNN semantic embedding search**, are as follows:
+1. **Native to AWS** — Integrates with Bedrock, Lambda, and IAM without extra overhead.
+2. **Built-in KNN support** — OpenSearch provides a `knn_vector` field type and KNN search APIs, so we can store high dimensional embedings and run nearest-neighbour queries by similarity without building a separate vector store.
+3. **Semantic search fit** — KNN over embeddings gives us meaning-based retrieval: the query is embedded with the same model as the documents, and the top‑k nearest neighbours are the most semantically similar products, which is exactly what the RAG agent needs for context.
+4. **Unified storage** — We keep both the embedding vector and the product metadata (title, category, price, etc.) in the same document, so a single KNN query returns the full context for the LLM without a second lookup.
+
+The reason a KNN semantic approach was chosen is that this approach benefits from meaning similarity between a user query and data found in our index. 
+
+Vector Database Alternative: One alternative that could be used here is AWS Aurora PostgreSQL with pgvector, which is a relational database that can leverage similar embedding representation and searches.
+#### Embedding Model
+The embedding model selected is Amazon Titan Embed Text v2, used for all text and image derived content in this solution. The reasons this was chosen are as follows:
+1. **Available on Bedrock.** It runs on the same AWS Bedrock stack as the rest of the pipeline, so we avoid external embedding APIs and keep latency and cost predictable.
+2. **High dimensional output.** It produces 1024 dimensional vectors with normalisation, which gives a rich representation for semantic similarity and aligns well with OpenSearch KNN search using inner product.
+3. **Single embedding space.** We use the same model for product text and for image description text, so both live in one embedding space and the agent can run one type of KNN query across text and image indices for consistent semantic retrieval.
+4. **Suited to product data.** It is built for general purpose semantic embedding, which fits product titles, features, descriptions and visual descriptions without needing a custom model.
+
+Embedding Model Alternative: Cohere Embed v3 on Bedrock is a strong alternative, as it is tuned for retrieval and e-commerce style product search and supports multilingual queries out of the box. 
+
+Note: The reason cohere was not selected is that it is significantly more expensive than titan.
+
+| Model | Price per 1,000 tokens |
+|-------|------------------------|
+| Titan Embed Text v2 | $0.00002 |
+| Cohere Embed v3 | $0.0001 |
+
+#### Agent LLM
+The agent LLM selected is Amazon Nova Lite on AWS Bedrock, which drives the RAG conversation and calls the retrieval tools before answering. The reasons this was chosen are as follows:
+1. **Available on Bedrock.** It runs on the same AWS stack as the embedding model, so we keep the pipeline within Bedrock and avoid extra integrations or latency.
+2. **Native tool use.** It supports Bedrock tool use and function calling, so we can define the text and image search tools and have the model decide when to call them and how to combine the retrieved context into an answer.
+3. **Cost effective.** Nova Lite is a lighter model than Nova Pro or Claude, which keeps inference cost low for a case study while still giving good instruction following and tool use for product Q&A.
+4. **Fits RAG use case.** It is well suited to question answering over retrieved context, so the agent can ground answers in the product data from OpenSearch and reduce hallucinations.
+
+Agent LLM Alternative: Claude 3 Haiku or Claude 3/4 Sonnet on Bedrock are strong alternatives if higher quality or longer context is needed, at a higher per token cost.
+
+#### Compute
+The compute layer is AWS Lambda, used for embedding, indexing and agent invocation. Two main benefits:
+1. **Fully managed.** No servers to run or patch; we only deploy code and pay per invocation, which keeps the setup simple for this scope.
+2. **Easy to deploy and develop.** Each piece of logic lives in a small Lambda, so we can iterate quickly and deploy via Terraform. For larger datasets, the 15 minute Lambda limit may require moving to containerised workloads on ECS.
+
+Compute Alternative: Dockerise the processing scripts, push to ECR and run on ECS or Fargate for long running or bulk jobs.
+
+#### Orchestration
+Data processing is orchestrated with AWS Step Functions so text and image embedding run in parallel before indexing into OpenSearch. Two main benefits:
+1. **Native to AWS.** Step Functions is a managed service that fits the rest of the stack and avoids running our own scheduler.
+2. **Integrates with Lambda and other services.** We define the workflow in state machine definitions and invoke Lambdas at each step, with retries and error handling built in.
+
+Orchestration Alternative: Apache Airflow or AWS MWAA if we need more complex DAGs or richer scheduling.
+
+#### IAC
+Infrastructure is defined and deployed with Terraform. Two main benefits:
+1. **Declarative and versioned.** All resources are in code, so we can review changes, roll back and replicate the environment consistently.
+2. **Provider ecosystem.** The AWS provider gives us a single tool for OpenSearch, Lambda, Step Functions, API Gateway and IAM, keeping the whole stack in one place.
 
 ### Data Handling & Processing
 
@@ -28,14 +134,62 @@ The plot shows that **bought_together** is fully empty, and that **videos** and 
 
 Product text is turned into a single JSON document per product and then embedded for semantic search.
 
-- **Processing:** Each row is mapped to a JSON document with fields such as `parent_asin`, `title`, `main_category`, `store`, `price`, `average_rating`, `rating_number`, `features`, `description`, `categories`, and `details`. The text used for embedding is built by concatenating title, main category, features, and description.
-- **Embedding:** The concatenated text is embedded with the **Amazon Titan Embed Text v2** model (`amazon.titan-embed-text-v2:0`) with 1024 dimensions and normalisation. The resulting vector is stored in the document and indexed in the text OpenSearch index for KNN search.
+**Building the embedding text**
+
+Each row is mapped to a JSON document with fields such as `parent_asin`, `title`, `main_category`, `store`, `price`, `average_rating`, `rating_number`, `features`, `description`, `categories`, and `details`. The string sent to the embedding model is built by simply combining title, main category, features, and description into one space-separated string. Empty or missing fields are passed as empty strings and filtered out before joining:
+
+```python
+def build_embedding_text(json_data):
+    embedding_text = [
+        json_data.get("title") or "",
+        json_data.get("main_category") or "",
+        " ".join(json_data.get("features") or []),
+        " ".join(json_data.get("description") or []),
+    ]
+    return " ".join(filter(None, embedding_text))
+```
+
+**Data cleaning**
+
+Missing data was kept as missing. Fields such as `description` or `features` can be null or empty; the embedding text still works because we use `or ""` and `filter(None, ...)`, so the model receives a shorter string for sparse products. Embeddings remain meaningful at this document size. No explicit text cleaning was applied: no HTML elements were found in the data, and emojis or unusual characters were left as-is, since users may ask about product names or descriptions that contain them and we want the index to match those queries.
+
+**Chunking**
+
+No chunking was used for product text. Each product is one document and one embedding. The length of the embedding text per product in the dataset is summarised below (in characters):
+
+| Statistic | Length (chars) |
+|-----------|----------------|
+| count     | 1500           |
+| mean      | 943.15         |
+| std       | 840.94         |
+| min       | 14             |
+| 25%       | 216.5          |
+| 50%       | 747            |
+| 75%       | 1434.5         |
+| max       | 8930           |
+
+**Amazon Titan Embed Text v2** accepts up to **8,192 tokens** or **50,000 characters**, whichever is reached first. The maximum length in our data (8,930 characters) is well below the model limit, so every product fits in a single input and chunking was not required. At the current description and feature lengths, the embedding model captures the full content in a single vector. For very large descriptions in a production setting, we would want to chunk and embed each chunk separately so that long documents do not get under-represented in similarity search.
+
+**Embedding**
+
+The concatenated text from `build_embedding_text` is embedded with **Amazon Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`) with 1024 dimensions and normalisation. The resulting vector is stored in the document and indexed in the text OpenSearch index for KNN search.
 
 #### Image Data
 
 Images are not embedded directly; they are first described in text, then that text is embedded.
 
-- **Description:** Each product image (e.g. the `MAIN` variant) is sent to **Amazon Nova Lite** with a prompt asking for a detailed product description (appearance, colours, materials, notable visual features). The model returns a short text description.
+- **Description:** Each product image (e.g. the `MAIN` variant) is sent to **Amazon Nova Lite** with a prompt asking for a detailed product description (appearance, colours, materials, notable visual features). The model returns a short text description. Example output for a product image:
+
+  > The image showcases a pair of rustic wooden shelves against a plain white background. Each shelf is crafted from weathered wood, giving it a natural and earthy appearance with visible grain patterns. The shelves are supported by sleek, black metal brackets that add a modern contrast to the wooden aesthetic.
+  >
+  > On the top shelf, there is a framed picture with a black border, displaying a photograph of a person in an indoor setting. The picture adds a personal touch and complements the rustic theme of the shelves.
+  >
+  > The lower shelf features a wooden figurine of a bear playing a guitar, adding a whimsical and charming element to the setup. The figurine is placed on a small, natural-colored log, enhancing the rustic feel.
+  >
+  > Next to the figurine, there is a white ceramic vase with a minimalist design. The vase contains a small bouquet of flowers, consisting of red and white blooms, which provides a splash of color and freshness to the overall arrangement.
+  >
+  > The arrangement of the items on the shelves is balanced, with the picture frame on the top shelf, the bear figurine and log on the lower shelf, and the vase of flowers completing the ensemble. The combination of natural wood, metal, and floral elements creates a cozy and inviting display.
+
 - **Storage:** For each image we store a JSON document with `parent_asin`, `variant`, the Nova-generated `description`, and an `embedding` field. Documents are written to the image OpenSearch index in the same way as text (e.g. bulk indexing with chunking).
 - **Embedding:** The image description text is embedded with the **Amazon Titan Embed Text v2** model (same as text), so image and text data live in a shared embedding space and can be queried with the same semantic search setup.
 
