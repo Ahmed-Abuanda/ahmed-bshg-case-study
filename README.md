@@ -63,10 +63,10 @@ The cloud provider selected for this project is AWS, this is mainly due to perso
 
 #### Vector Database
 The vector database selected is the AWS OpenSearch Service, which is an AWS managed service that lets us run and scale OpenSearch clusters with strong analytical capabilities. The reasons this was chosen for our vector DB, especially for **KNN semantic embedding search**, are as follows:
-1. **Native to AWS** — Integrates with Bedrock, Lambda, and IAM without extra overhead.
-2. **Built-in KNN support** — OpenSearch provides a `knn_vector` field type and KNN search APIs, so we can store high dimensional embedings and run nearest-neighbour queries by similarity without building a separate vector store.
-3. **Semantic search fit** — KNN over embeddings gives us meaning-based retrieval: the query is embedded with the same model as the documents, and the top‑k nearest neighbours are the most semantically similar products, which is exactly what the RAG agent needs for context.
-4. **Unified storage** — We keep both the embedding vector and the product metadata (title, category, price, etc.) in the same document, so a single KNN query returns the full context for the LLM without a second lookup.
+1. **Native to AWS.** Integrates with Bedrock, Lambda, and IAM without extra overhead.
+2. **Built-in KNN support.** OpenSearch provides a `knn_vector` field type and KNN search APIs, so we can store high dimensional embedings and run nearest-neighbour queries by similarity without building a separate vector store.
+3. **Semantic search fit.** KNN over embeddings gives us meaning-based retrieval: the query is embedded with the same model as the documents, and the top‑k nearest neighbours are the most semantically similar products, which is exactly what the RAG agent needs for context.
+4. **Unified storage.** We keep both the embedding vector and the product metadata such as title, category and price in the same document, so a single KNN query returns the full context for the LLM without a second lookup.
 
 The reason a KNN semantic approach was chosen is that this approach benefits from meaning similarity between a user query and data found in our index. 
 
@@ -108,7 +108,7 @@ Data processing is orchestrated with AWS Step Functions so text and image embedd
 1. **Native to AWS.** Step Functions is a managed service that fits the rest of the stack and avoids running our own scheduler.
 2. **Integrates with Lambda and other services.** We define the workflow in state machine definitions and invoke Lambdas at each step, with retries and error handling built in.
 
-Orchestration Alternative: Apache Airflow or AWS MWAA if we need more complex DAGs or richer scheduling.
+Orchestration Alternative: Apache Airflow if we need more complex DAGs or richer scheduling.
 
 #### IAC
 Infrastructure is defined and deployed with Terraform. Two main benefits:
@@ -121,11 +121,11 @@ Data is processed and cleaned in stages before being indexed in OpenSearch. The 
 
 #### EDA
 
-An exploratory analysis was done to understand missingness and data quality. Missing values per column were computed (treating empty lists as null where relevant) and visualised to decide which columns to keep or drop.
+An exploratory analysis was done to understand missingness and data quality. Missing values per column were computed, treating empty lists as null where relevant, and visualised to decide which columns to keep or drop.
 
 ![Missing datapoints per column](Data/newplot-23.png)
 
-The plot shows that **bought_together** is fully empty, and that **videos** and **price** have high missingness. **bought_together** was dropped from the pipeline because it adds no signal. Remaining columns were kept and handled in the text/image/video pipelines (e.g. optional fields, null-safe serialisation).
+The plot shows that **bought_together** is fully empty, and that **videos** and **price** have high missingness. **bought_together** was dropped from the pipeline because it adds no signal. Remaining columns were kept and handled in the text/image/video pipelines, for example optional fields and null-safe serialisation.
 
 #### Text Data
 
@@ -143,18 +143,25 @@ def build_embedding_text(json_data):
         " ".join(json_data.get("features") or []),
         " ".join(json_data.get("description") or []),
     ]
+    
+    price = json_data.get("price")
+    if price is not None and not (isinstance(price, float) and np.isnan(price)):
+        embedding_text.append(f"Item price: {price}")
+    
+    embedding_text.append(_details_to_text(json_data.get("details") or {}))
+
     return " ".join(filter(None, embedding_text))
 ```
 
 **Data cleaning**
 
-Missing data was kept as missing. Fields such as `description` or `features` can be null or empty; the embedding text still works because we use `or ""` and `filter(None, ...)`, so the model receives a shorter string for sparse products. Embeddings remain meaningful at this document size. No explicit text cleaning was applied: no HTML elements were found in the data, and emojis or unusual characters were left as-is, since users may ask about product names or descriptions that contain them and we want the index to match those queries.
+Missing data was kept as missing. Fields such as `description` or `features` can be null or empty; the embedding text still works because we use empty string defaults and filter out empty parts, so the model receives a shorter string for sparse products. Embeddings remain meaningful at this document size. No explicit text cleaning was applied: no HTML elements were found in the data, and emojis or unusual characters were left as-is, since users may ask about product names or descriptions that contain them and we want the index to match those queries.
 
 **Chunking**
 
-No chunking was used for product text. Each product is one document and one embedding. The length of the embedding text per product in the dataset is summarised below (in characters):
+No chunking was used for product text. Each product is one document and one embedding. The length of the embedding text per product in the dataset is summarised below in characters:
 
-| Statistic | Length (chars) |
+| Statistic | Length characters |
 |-----------|----------------|
 | count     | 1500           |
 | mean      | 943.15         |
@@ -165,17 +172,41 @@ No chunking was used for product text. Each product is one document and one embe
 | 75%       | 1434.5         |
 | max       | 8930           |
 
-**Amazon Titan Embed Text v2** accepts up to **8,192 tokens** or **50,000 characters**, whichever is reached first. The maximum length in our data (8,930 characters) is well below the model limit, so every product fits in a single input and chunking was not required. At the current description and feature lengths, the embedding model captures the full content in a single vector. For very large descriptions in a production setting, we would want to chunk and embed each chunk separately so that long documents do not get under-represented in similarity search.
+**Amazon Titan Embed Text v2** accepts up to **8,192 tokens** or **50,000 characters**, whichever is reached first. The maximum length in our data, 8,930 characters, is well below the model limit, so every product fits in a single input and chunking was not required. At the current description and feature lengths, the embedding model captures the full content in a single vector. For very large descriptions in a production setting, we would want to chunk and embed each chunk separately so that long documents do not get under-represented in similarity search.
 
 **Embedding**
 
-The concatenated text from `build_embedding_text` is embedded with **Amazon Titan Embed Text v2** (`amazon.titan-embed-text-v2:0`) with 1024 dimensions and normalisation. The resulting vector is stored in the document and indexed in the text OpenSearch index for KNN search.
+The concatenated text from `build_embedding_text` is embedded with **Amazon Titan Embed Text v2**, model id amazon.titan-embed-text-v2:0, with 1024 dimensions and normalisation. The resulting vector is stored in the document and indexed in the text OpenSearch index for KNN search.
+
+### LLM Agent Inference
+Convert this to a quote prompt:
+"system": [{
+    "text": (
+        "You are a helpful product shopping assistant. "
+        "You have access to tools that search a product catalogue. "
+        "IMPORTANT: You must ONLY use information returned by the tools to answer questions. "
+        "Do NOT use your own knowledge to describe, recommend, or invent product details. "
+        "If the tools return no relevant results, say so honestly do not guess or fabricate any information "
+        "You may call tools multiple times to gather all necessary information. "
+        "Always cite the ASIN when referencing a specific product. "
+        "When you have enough information, respond with ONLY the final answer no preamble, no reasoning, no tool call summaries. Be concise and direct."
+    )
+}],
+
+#### Using Bedrock/Nova Lite
+
+#### Tools Available
+
+#### Prompt Grounding
+
+#### References
+
 
 #### Image Data
 
 Images are not embedded directly; they are first described in text, then that text is embedded.
 
-- **Description:** Each product image (e.g. the `MAIN` variant) is sent to **Amazon Nova Lite** with a prompt asking for a detailed product description (appearance, colours, materials, notable visual features). The model returns a short text description. Example output for a product image:
+- **Description:** Each product image, such as the MAIN variant, is sent to **Amazon Nova Lite** with a prompt asking for a detailed product description: appearance, colours, materials and notable visual features. The model returns a short text description. Example output for a product image:
 
   > The image showcases a pair of rustic wooden shelves against a plain white background. Each shelf is crafted from weathered wood, giving it a natural and earthy appearance with visible grain patterns. The shelves are supported by sleek, black metal brackets that add a modern contrast to the wooden aesthetic.
   >
@@ -187,8 +218,8 @@ Images are not embedded directly; they are first described in text, then that te
   >
   > The arrangement of the items on the shelves is balanced, with the picture frame on the top shelf, the bear figurine and log on the lower shelf, and the vase of flowers completing the ensemble. The combination of natural wood, metal, and floral elements creates a cozy and inviting display.
 
-- **Storage:** For each image we store a JSON document with `parent_asin`, `variant`, the Nova-generated `description`, and an `embedding` field. Documents are written to the image OpenSearch index in the same way as text (e.g. bulk indexing with chunking).
-- **Embedding:** The image description text is embedded with the **Amazon Titan Embed Text v2** model (same as text), so image and text data live in a shared embedding space and can be queried with the same semantic search setup.
+- **Storage:** For each image we store a JSON document with `parent_asin`, `variant`, the Nova-generated `description`, and an `embedding` field. Documents are written to the image OpenSearch index in the same way as text, for example bulk indexing with chunking.
+- **Embedding:** The image description text is embedded with the **Amazon Titan Embed Text v2** model, the same as for text, so image and text data live in a shared embedding space and can be queried with the same semantic search setup.
 
 #### Video Data
 
@@ -210,7 +241,7 @@ Video ingestion was not implemented in this solution.
 
 The vector database is AWS OpenSearch Service. The agent embeds the user question with Titan, then runs KNN search so that the query vector is compared against document embeddings in the index; the nearest neighbours by inner product are returned as context. There are three indices: products_main for product text and metadata, products_images for image descriptions, and products_videos for future video derived text.
 
-**Text index (products_main)**
+**Text index: products_main**
 
 - Holds product metadata and text: title, category, features, description, price, ratings.
 
@@ -268,7 +299,7 @@ The vector database is AWS OpenSearch Service. The agent embeds the user questio
 }
 ```
 
-**Image index (products_images)**
+**Image index: products_images**
 
 - One document per product image; Nova Lite generates the description text, then Titan embeds it.
 
@@ -281,7 +312,7 @@ The vector database is AWS OpenSearch Service. The agent embeds the user questio
 }
 ```
 
-**Video index (products_videos)**
+**Video index: products_videos**
 
 - Reserved for future video pipeline; same embedding setup as text and image indices.
 
@@ -311,7 +342,7 @@ The text embedder Lambda reads product data from S3, turns each row into a JSON 
 Logical steps:
 
 1. **Load data from S3.** Read the object key from the event, fetch the file from the bucket, and parse as JSON or JSONL into a dataframe.
-2. **Build JSON data.** Map each row to a product document with cleaned fields (parent_asin, title, main_category, features, description, etc.).
+2. **Build JSON data.** Map each row to a product document with cleaned fields such as parent_asin, title, main_category, features and description.
 3. **Get embeddings.** For each document, build the embedding text via `build_embedding_text`, call Titan Embed Text v2, and attach the vector to the document.
 4. **Push data to OpenSearch.** Bulk index the documents into the text index in chunks with a short delay between chunks.
 
@@ -322,11 +353,32 @@ The image embedder Lambda reads the same product data from S3, selects rows that
 Logical steps:
 
 1. **Load data from S3.** Read the object key from the event, fetch the file, and parse as JSON or JSONL into a dataframe.
-2. **Extract image tasks.** Filter rows with an `images` field, collect each MAIN variant image per product as (parent_asin, image_data).
+2. **Extract image tasks.** Filter rows with an `images` field, collect each MAIN variant image per product as parent_asin and image_data.
 3. **Describe and embed.** For each image, fetch the image from its URL, send it to Nova Lite for a text description, embed that description with Titan, and build a document with parent_asin, variant, description, and embedding.
 4. **Push data to OpenSearch.** Bulk index the image documents into the image index in chunks.
 
+### LLM Agent Inference
+
+At query time, the user question is sent to the invoke agent Lambda, which uses **Amazon Nova Lite** on Bedrock with tool use enabled. The model can call one or both of the retrieval tools to fetch relevant products from OpenSearch before answering. The user question is embedded with Titan and compared against the text and image indices via KNN search; the tool results are returned as context so the agent can ground its reply in actual product data and avoid hallucinations.
+
+The agent receives the list of tools below. It decides when to call each tool and with which question; the Lambda executes the tool, passes the result back into the conversation, and continues until the model returns a final answer. This RAG loop keeps responses tied to the indexed catalogue.
+
+| Tool | Description |
+|------|-------------|
+| query_text_index | Search the product catalogue using a question. Returns matching products with titles, prices, ratings and features. |
+| query_image_index | Search product images using a question. Returns matching images with visual descriptions. Use when the question is about appearance, colour, design or visuals. |
+
+**Prompt grounding**
+
+The agent is instructed via the system prompt to use only information returned by the tools when answering. It must not use its own knowledge to describe, recommend or invent product details. If the tools return no relevant results, it must say so and must not guess or fabricate information. This keeps every claim about products traceable to the retrieved catalogue and reduces hallucinations.
+
+**Reference returning**
+
+When the agent references a specific product, it is instructed to always cite the ASIN. The tool results already include ASIN, title, price, rating and features or image description per hit, so the model can both ground its answer in that context and surface those identifiers in its reply. That way the user gets a verifiable reference such as the ASIN to look up the product.
+
 ## Future Improvements
+
+### Hybrid Vector Search
 
 ### Security
 

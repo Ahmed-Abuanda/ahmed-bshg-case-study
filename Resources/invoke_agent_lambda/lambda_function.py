@@ -194,7 +194,18 @@ def send_message(user_message):
             accept="application/json",
             body=json.dumps({
                 "schemaVersion": "messages-v1",
-                "system": [{"text": "You are a helpful product shopping assistant. Use the tools available to search the product catalogue and answer questions accurately."}],
+                "system": [{
+                    "text": (
+                        "You are a helpful product shopping assistant. "
+                        "You have access to tools that search a product catalogue. "
+                        "IMPORTANT: You must ONLY use information returned by the tools to answer questions. "
+                        "Do NOT use your own knowledge to describe, recommend, or invent product details. "
+                        "If the tools return no relevant results, say so honestly do not guess or fabricate any information "
+                        "You may call tools multiple times to gather all necessary information. "
+                        "Always cite the ASIN when referencing a specific product. "
+                        "When you have enough information, respond with ONLY the final answer no preamble, no reasoning, no tool call summaries. Be concise and direct."
+                    )
+                }],
                 "messages": messages,
                 "toolConfig": {
                     "tools": [

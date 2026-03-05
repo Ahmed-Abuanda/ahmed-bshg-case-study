@@ -58,6 +58,20 @@ def generate_embeddings(text):
     response_body = json.loads(response["body"].read())
     return response_body["embedding"]
 
+def _details_to_text(details):
+    if not details or not isinstance(details, dict):
+        return ""
+    parts = []
+    for k, v in details.items():
+        if v is None:
+            continue
+        if isinstance(v, dict):
+            parts.append(f"{k} {json.dumps(v)}")
+        else:
+            parts.append(f"{k} {v}")
+    return " ".join(parts)
+
+
 def build_embedding_text(json_data):
     embedding_text = [
         json_data.get("title") or "",
@@ -65,6 +79,13 @@ def build_embedding_text(json_data):
         " ".join(json_data.get("features") or []),
         " ".join(json_data.get("description") or []),
     ]
+    
+    price = json_data.get("price")
+    if price is not None and not (isinstance(price, float) and np.isnan(price)):
+        embedding_text.append(f"Item price: {price}")
+    
+    embedding_text.append(_details_to_text(json_data.get("details") or {}))
+
     return " ".join(filter(None, embedding_text))
 
 def add_embeddings_to_data(json_data):
