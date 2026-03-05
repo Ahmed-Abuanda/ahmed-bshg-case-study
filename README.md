@@ -13,9 +13,6 @@ The solution works to gain the most information from the data by splitting the d
 
 The reason for doing this is that any potential questions that describe its shape or uses might be better described in a picture/video, and the agent will be able to search specifically among what it needs. With this approach, separate embeddings are created for text, images and videos.
 
-
-
-
 ### Repository Structure
 
 ```
@@ -219,18 +216,55 @@ The vector database is AWS OpenSearch Service. The agent embeds the user questio
 
 ```json
 {
-  "parent_asin": "B08N5WRWNW",
-  "title": "Sony WH-1000XM4 Wireless Headphones",
-  "store": "Sony",
-  "main_category": "Electronics",
-  "categories": ["Electronics", "Headphones"],
-  "price": 279.99,
-  "average_rating": 4.7,
-  "rating_number": 52341,
-  "features": "Noise cancellation, 30h battery",
-  "description": "Premium wireless headphones...",
-  "details": { "brand": "Sony", "color": "Black" },
-  "embedding": [0.02, -0.41, 0.73, "..."]
+  "parent_asin": "B092W84VKC",
+  "main_category": "Amazon Home",
+  "title": "ShineeKee Soild Wood Floating Shelves Set of 2 Wall Mounted Shelves Rustic Storage Wall Shelf Thick Natural Wood Floating Wall Shelves for Laundry Room Living Room Bedroom Kitchen Bathroom-16 x 5.5\"",
+  "average_rating": 4.4,
+  "rating_number": 66,
+  "price": null,
+  "store": "ShineeKee",
+  "features": [
+    "\u3010100% US HOMEGROWN PINE WOOD\u3011It can be proud to say that our wood board is 100% sourced from authentic pine wood in native American forests, exuding the fragrance of pine wood. Clear wood texture and unique craftsmanship create a retro style. Package includes 2pcs wooden shelves and necessary hardware. Each shelf measures 16\" x 5.5\" x 1.2\" inches, thick wood boards and solid brackets provide powerful load bearing capacity, can securely hold up to 40lbs, perfect for home decoration and storage.",
+    "\u3010UPGRATED 2 TYPES WALL ANCHORS\u3011Unlike others' single installation that only applies to hard walls, we have thoughtfully prepared two types of wall anchors to apply to both hard and soft walls. White Anchors for Soft Wall (Drywall/Gypsum/Wallboard/Sheetrock Wall). Yellow Anchors for Hard Wall (Concrete/Brick/Plywood Wall). Package comes with detailed installation instructions to make your shelf installation a breeze. Enhance the aesthetic appeal of your interior space with our wood wall shelves.",
+    "\u3010HANDCRAFTED CARBONIZED WOODEN SHELVES\u3011We always uphold the spirit of craftsmanship, hand craft every shelf in our wood workshop, and are committed to providing customers with high-quality craftsman-style shelves. Each of our rustic shelves has been carbonized at 600\u00b0F and brushed to achieve the function of compression, waterproof and corrosion resistance. The two corners of the shelf are decorated with metal reinforcement, which effectively protects the board and adds a retro and noble beauty.",
+    "... (2 more)"
+  ],
+  "description": null,
+  "categories": [
+    "Home & Kitchen",
+    "Home D\u00e9cor Products",
+    "Home D\u00e9cor Accents",
+    "... (1 more)"
+  ],
+  "details": {
+    "Material": "Pine",
+    "Mounting Type": "Wall Mount",
+    "Room Type": "Office, Bathroom, Living Room, Bedroom",
+    "Shelf Type": "Wood",
+    "Number of Shelves": "2",
+    "Special Feature": "Waterproof, Durable",
+    "Product Dimensions": "16.26\"D x 5.53\"W x 2.48\"H",
+    "Shape": "Rectangular",
+    "Style": "Country Rustic",
+    "Age Range (Description)": "Adult",
+    "Brand": "ShineeKee",
+    "Product Care Instructions": "Wipe with Dry Cloth",
+    "Size": "16\"L x 5.5\"W",
+    "Assembly Required": "No",
+    "Recommended Uses For Product": "Bathroom, Kitchen, Living Room, Bedroom",
+    "Number of Items": "2",
+    "Manufacturer": "ShineeKee",
+    "Installation Type": "Wall Mount",
+    "Item Weight": "4.44 pounds",
+    "Item model number": "SK-FSHS-16-2Pcs",
+    "Best Sellers Rank": {
+      "Home & Kitchen": 1430082,
+      "Floating Shelves": 3914,
+      "Storage Racks, Shelves & Drawers": 5418
+    },
+    "Date First Available": "October 1, 2021"
+  },
+  "embedding": "... (1024 items)"
 }
 ```
 
@@ -264,7 +298,33 @@ The vector database is AWS OpenSearch Service. The agent embeds the user questio
 
 #### 2. Data Processing Step Function
 
+The Step Function runs the text and image embedding pipelines in parallel. It receives an input payload containing the S3 key of the product data file and invokes both the text embedder and image embedder Lambdas with that key, so a single run can backfill or refresh both the text and image OpenSearch indices from the same source file.
+
 ![img.png](Data/img.png)
+
+#### 3. Data Processing Lambda Functions
+
+##### Text Data Lambda Function
+
+The text embedder Lambda reads product data from S3, turns each row into a JSON document with an embedding, and bulk indexes into the text OpenSearch index.
+
+Logical steps:
+
+1. **Load data from S3.** Read the object key from the event, fetch the file from the bucket, and parse as JSON or JSONL into a dataframe.
+2. **Build JSON data.** Map each row to a product document with cleaned fields (parent_asin, title, main_category, features, description, etc.).
+3. **Get embeddings.** For each document, build the embedding text via `build_embedding_text`, call Titan Embed Text v2, and attach the vector to the document.
+4. **Push data to OpenSearch.** Bulk index the documents into the text index in chunks with a short delay between chunks.
+
+##### Image Data Lambda Function
+
+The image embedder Lambda reads the same product data from S3, selects rows that have images, describes each MAIN image with Nova Lite, embeds the description with Titan, and bulk indexes into the image OpenSearch index.
+
+Logical steps:
+
+1. **Load data from S3.** Read the object key from the event, fetch the file, and parse as JSON or JSONL into a dataframe.
+2. **Extract image tasks.** Filter rows with an `images` field, collect each MAIN variant image per product as (parent_asin, image_data).
+3. **Describe and embed.** For each image, fetch the image from its URL, send it to Nova Lite for a text description, embed that description with Titan, and build a document with parent_asin, variant, description, and embedding.
+4. **Push data to OpenSearch.** Bulk index the image documents into the image index in chunks.
 
 ## Future Improvements
 
