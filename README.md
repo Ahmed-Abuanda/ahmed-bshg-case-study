@@ -13,7 +13,7 @@ The solution works to gain the most information from the data by splitting the d
 
 The reason for doing this is that any potential questions that describe its shape or uses might be better described in a picture/video, and the agent will be able to search specifically among what it needs. With this approach, separate embeddings are created for text, images and videos.
 
-### Repository Structure
+## Repository Structure
 
 ```
 ahmed-bshg-case-study/
@@ -50,9 +50,9 @@ The repository is split into 4 main sections:
 3. **Data:** Directory to store data and documentation resources
 4. **Terraform Project:** Terraform files that are used to build resources on AWS, the backend is currently set to local.
 
-### Technology Stack & Justifications
+## Technology Stack & Justifications
 
-#### Cloud Provider
+### Cloud Provider
 The cloud provider selected for this project is AWS, this is mainly due to personal preference as I have extensive experience using AWS, as well its resources align greatly with project requirements. The resources used in AWS are:
 * Opensearch Vector DB
 * Bedrock Models
@@ -61,7 +61,7 @@ The cloud provider selected for this project is AWS, this is mainly due to perso
 * Step Functions
 * *among others*...
 
-#### Vector Database
+### Vector Database
 The vector database selected is the AWS OpenSearch Service, which is an AWS managed service that lets us run and scale OpenSearch clusters with strong analytical capabilities. The reasons this was chosen for our vector DB, especially for **KNN semantic embedding search**, are as follows:
 1. **Native to AWS.** Integrates with Bedrock, Lambda, and IAM without extra overhead.
 2. **Built-in KNN support.** OpenSearch provides a `knn_vector` field type and KNN search APIs, so we can store high dimensional embedings and run nearest-neighbour queries by similarity without building a separate vector store.
@@ -71,7 +71,7 @@ The vector database selected is the AWS OpenSearch Service, which is an AWS mana
 The reason a KNN semantic approach was chosen is that this approach benefits from meaning similarity between a user query and data found in our index. 
 
 Vector Database Alternative: One alternative that could be used here is AWS Aurora PostgreSQL with pgvector, which is a relational database that can leverage similar embedding representation and searches.
-#### Embedding Model
+### Embedding Model
 The embedding model selected is Amazon Titan Embed Text v2, used for all text and image derived content in this solution. The reasons this was chosen are as follows:
 1. **Available on Bedrock.** It runs on the same AWS Bedrock stack as the rest of the pipeline, so we avoid external embedding APIs and keep latency and cost predictable.
 2. **High dimensional output.** It produces 1024 dimensional vectors with normalisation, which gives a rich representation for semantic similarity and aligns well with OpenSearch KNN search using inner product.
@@ -87,7 +87,7 @@ Note: The reason cohere was not selected is that it is significantly more expens
 | Titan Embed Text v2 | $0.00002 |
 | Cohere Embed v3 | $0.0001 |
 
-#### Agent LLM
+### Agent LLM
 The agent LLM selected is Amazon Nova Lite on AWS Bedrock, which drives the RAG conversation and calls the retrieval tools before answering. The reasons this was chosen are as follows:
 1. **Available on Bedrock.** It runs on the same AWS stack as the embedding model, so we keep the pipeline within Bedrock and avoid extra integrations or latency.
 2. **Native tool use.** It supports Bedrock tool use and function calling, so we can define the text and image search tools and have the model decide when to call them and how to combine the retrieved context into an answer.
@@ -96,30 +96,30 @@ The agent LLM selected is Amazon Nova Lite on AWS Bedrock, which drives the RAG 
 
 Agent LLM Alternative: Claude 3 Haiku or Claude 3/4 Sonnet on Bedrock are strong alternatives if higher quality or longer context is needed, at a higher per token cost.
 
-#### Compute
+### Compute
 The compute layer is AWS Lambda, used for embedding, indexing and agent invocation. Two main benefits:
 1. **Fully managed.** No servers to run or patch; we only deploy code and pay per invocation, which keeps the setup simple for this scope.
 2. **Easy to deploy and develop.** Each piece of logic lives in a small Lambda, so we can iterate quickly and deploy via Terraform. For larger datasets, the 15 minute Lambda limit may require moving to containerised workloads on ECS.
 
 Compute Alternative: Dockerise the processing scripts, push to ECR and run on ECS or Fargate for long running or bulk jobs.
 
-#### Orchestration
+### Orchestration
 Data processing is orchestrated with AWS Step Functions so text and image embedding run in parallel before indexing into OpenSearch. Two main benefits:
 1. **Native to AWS.** Step Functions is a managed service that fits the rest of the stack and avoids running our own scheduler.
 2. **Integrates with Lambda and other services.** We define the workflow in state machine definitions and invoke Lambdas at each step, with retries and error handling built in.
 
 Orchestration Alternative: Apache Airflow if we need more complex DAGs or richer scheduling.
 
-#### IAC
+### IAC
 Infrastructure is defined and deployed with Terraform. Two main benefits:
 1. **Declarative and versioned.** All resources are in code, so we can review changes, roll back and replicate the environment consistently.
 2. **Provider ecosystem.** The AWS provider gives us a single tool for OpenSearch, Lambda, Step Functions, API Gateway and IAM, keeping the whole stack in one place.
 
-### Data Handling & Processing
+## Data Handling & Processing
 
 Data is processed and cleaned in stages before being indexed in OpenSearch. The approach is split into four areas: exploratory analysis, text, images, and videos.
 
-#### EDA
+### EDA
 
 An exploratory analysis was done to understand missingness and data quality. Missing values per column were computed, treating empty lists as null where relevant, and visualised to decide which columns to keep or drop.
 
@@ -178,31 +178,7 @@ No chunking was used for product text. Each product is one document and one embe
 
 The concatenated text from `build_embedding_text` is embedded with **Amazon Titan Embed Text v2**, model id amazon.titan-embed-text-v2:0, with 1024 dimensions and normalisation. The resulting vector is stored in the document and indexed in the text OpenSearch index for KNN search.
 
-### LLM Agent Inference
-Convert this to a quote prompt:
-"system": [{
-    "text": (
-        "You are a helpful product shopping assistant. "
-        "You have access to tools that search a product catalogue. "
-        "IMPORTANT: You must ONLY use information returned by the tools to answer questions. "
-        "Do NOT use your own knowledge to describe, recommend, or invent product details. "
-        "If the tools return no relevant results, say so honestly do not guess or fabricate any information "
-        "You may call tools multiple times to gather all necessary information. "
-        "Always cite the ASIN when referencing a specific product. "
-        "When you have enough information, respond with ONLY the final answer no preamble, no reasoning, no tool call summaries. Be concise and direct."
-    )
-}],
-
-#### Using Bedrock/Nova Lite
-
-#### Tools Available
-
-#### Prompt Grounding
-
-#### References
-
-
-#### Image Data
+### Image Data
 
 Images are not embedded directly; they are first described in text, then that text is embedded.
 
@@ -221,7 +197,7 @@ Images are not embedded directly; they are first described in text, then that te
 - **Storage:** For each image we store a JSON document with `parent_asin`, `variant`, the Nova-generated `description`, and an `embedding` field. Documents are written to the image OpenSearch index in the same way as text, for example bulk indexing with chunking.
 - **Embedding:** The image description text is embedded with the **Amazon Titan Embed Text v2** model, the same as for text, so image and text data live in a shared embedding space and can be queried with the same semantic search setup.
 
-#### Video Data
+### Video Data
 
 Video ingestion was not implemented in this solution.
 
@@ -357,6 +333,27 @@ Logical steps:
 3. **Describe and embed.** For each image, fetch the image from its URL, send it to Nova Lite for a text description, embed that description with Titan, and build a document with parent_asin, variant, description, and embedding.
 4. **Push data to OpenSearch.** Bulk index the image documents into the image index in chunks.
 
+### LLM Agent Inference Lambda
+
+The invoke agent Lambda handles user questions by calling Amazon Nova Lite on Bedrock with tool use. It passes the question to the model, runs any requested retrieval tools against OpenSearch, and returns the model’s final answer so the client gets a single RAG response.
+
+Logical steps:
+
+1. **Parse request.** Read the event or request body and extract the required question field.
+2. **Invoke the agent.** Send the user message to Nova Lite with the system prompt and tool definitions for query_text_index and query_image_index.
+3. **Handle tool use.** If the model returns tool_use, run each requested tool, append the results to the conversation and invoke the model again; repeat until the model returns end_turn with a final answer.
+
+#### 4. API Endpoint
+The Agent Inference Lambda is fronted by an API gateway, which acts as an endpoint that users can communicate with, this endpoint takes the question submitted by the user and feeds it into the lambda function. Then, the agent response is returned to the user through the api endpoint. This allows for a REST approach, allowing easy integration for our agent into any system or workflows.
+
+Bellow is an example of how to send a request to the endpoint:
+
+```shell
+curl -X POST "https://hm3yewg3c8.execute-api.eu-central-1.amazonaws.com//invoke" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Do you have any air fryers that are dishwasher-safe?"}'
+```
+
 ### LLM Agent Inference
 
 At query time, the user question is sent to the invoke agent Lambda, which uses **Amazon Nova Lite** on Bedrock with tool use enabled. The model can call one or both of the retrieval tools to fetch relevant products from OpenSearch before answering. The user question is embedded with Titan and compared against the text and image indices via KNN search; the tool results are returned as context so the agent can ground its reply in actual product data and avoid hallucinations.
@@ -376,16 +373,60 @@ The agent is instructed via the system prompt to use only information returned b
 
 When the agent references a specific product, it is instructed to always cite the ASIN. The tool results already include ASIN, title, price, rating and features or image description per hit, so the model can both ground its answer in that context and surface those identifiers in its reply. That way the user gets a verifiable reference such as the ASIN to look up the product.
 
+## Evaluation Set
+
+>**NOTE:** In full transparency, the evaluation dataset was created using an LLM due to limited time, but however was verified manually
+
+The prototype was tested against a manually created evaluation set of 20 question–answer pairs (`Data/validation_dataset.csv`) covering five intent types. Each question was sent to the live API:
+
+```bash
+curl -X POST "https://hm3yewg3c8.execute-api.eu-central-1.amazonaws.com//invoke" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "<question>"}'
+```
+
+Below is one example per intent type, with the question, the chatbot answer, and whether it matched the ground truth from `data.jsonl`.
+
+| Intent | Question | Result | Notes |
+|--------|----------|--------|--------|
+| **Feature-Specific** | Do you have any air fryers that have a ceramic-coated basket and are PFOA-free/BPA-free? | **Correct** | Returned the Yedi Evolution Air Fryer B08FBLZD8R with ceramic-coated basket and PFOA-free and BPA-free, matching the expected product and claims. |
+| **Comparative** | What is the material difference between the All-Clad LTD 14-Inch Nonstick Fry Pan and the CAINFY Nonstick Grill Pan? | **Correct** | Correctly contrasted All-Clad with stainless-steel interior and hard-anodized aluminum exterior against CAINFY with multi-die cast aluminum and PFOA-free ceramic nonstick coating. |
+| **Scenario-Based** | I'm looking for a durable, leak-proof bottle for day hikes that keeps drinks hot or cold. What would you recommend? | **Correct** | Recommended the Thermosteel Duo Deluxe Insulated Water Bottle B07G1D1RY6, matching the ground truth. It also listed other bottles that fit the scenario. |
+| **Exclusionary** | Show me coffee makers that do not rely on paper filters. | **Incorrect** | Returned a coffee grinder and a reusable coffee cup instead of coffee makers. Ground truth was Wyndham House French Press B00AGG74QG and Bella One Scoop One Cup B009463PV2. Retrieval likely surfaced reusable or coffee items that are not brewers and the model did not restrict to actual coffee makers. |
+| **Ambiguous** | What's a good pot for a new kitchen? | **Incorrect** | Responded that no pots were found and asked for more details. Ground truth included QStar saucepan B0B3SB783X or Swissmar fondue pot B000FDDV4O. Semantic search for pot may not match sauce pan or fondue pot in the index, or the agent gave up before combining partial matches. |
+
+Failures on Exclusionary and Ambiguous intents point to retrieval, such as query formulation or KNN returning off-topic or too-narrow results, and possibly prompt design, such as instructing the agent to ask for clarification only when retrieval is truly empty.
+
 ## Future Improvements
 
 ### Hybrid Vector Search
 
+The current pipeline uses only KNN over embeddings. Combining semantic search with keyword or BM25 search in OpenSearch would improve recall for exact matches such as product names, ASINs, or specific feature terms. A hybrid query could merge KNN and keyword scores so that both meaning and literal matches contribute to the ranked results.
+
+### Other Semantic Approaches
+
+OpenSearch supports approximate nearest neighbour search. For very large catalogues, switching to ANN with HNSW or IVF would keep latency low while still allowing semantic retrieval. Re-ranking the top K NN results with a cross-encoder or a small classifier could also improve precision before passing context to the LLM.
+
 ### Security
+
+No security was explicitly added to the resources and infrastructure due to the small nature of the project. In production this would need rigorous security and permissions, for example authenticating API calls, least-privilege IAM for Lambdas and OpenSearch, VPC isolation for the cluster, and encryption at rest and in transit for data and embeddings.
+
+### Monitoring
+
+Production would benefit from metrics on API latency, Lambda errors and duration, Bedrock token usage, and OpenSearch query performance. CloudWatch dashboards and alarms could track these. Logging tool calls and retrieved document IDs would help debug retrieval and generation issues.
 
 ### Prompts
 
+The prompts were developed quickly and were not set up with infrastructure for versioning or A/B comparison. A next step would be to store prompts in a config store or parameter store, version them, and run small eval sets to compare prompt variants before rollout.
+
 ### Automation
+
+In a production deployment the data processing pipeline would run automatically when new data arrives or on a schedule. New or updated products in S3 could trigger the Step Function via EventBridge or S3 event notifications so that the text and image indices are refreshed without manual runs.
 
 ### Agent Session Memory
 
-### Videos & Image Processing
+The agent is stateless and does not keep session memory. Adding it would allow follow-up questions and multi-turn recommendations. Options include storing conversation state in S3 or DynamoDB and passing the last N turns into the Bedrock request, or using an AWS-native solution such as Bedrock conversation memory or Agent for Amazon Bedrock.
+
+### Videos and Image Processing
+
+Video ingestion was not implemented. Finishing it would mean describing each product video with a multimodal model, embedding the description text with Titan, and indexing into the products_videos index so the agent can search video content. Image processing could be extended to more variants per product and to structured fields such as colour or material inferred from the image.
