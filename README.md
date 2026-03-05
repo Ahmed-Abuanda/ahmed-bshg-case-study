@@ -216,7 +216,15 @@ Video ingestion was not implemented in this solution.
 ![bshg.drawio.png](Data/bshg.drawio.png)
 
 ### Architecture Components
-
+| Component | Technology | Key Reason |
+|---|---|---|
+| Vector Database | AWS OpenSearch | Native KNN search, unified vector + metadata storage |
+| Embedding Model | Amazon Titan Embed Text v2 | 1024-dim, shared space for text & images, cheapest on Bedrock ($0.00002/1K tokens) |
+| Agent LLM | Amazon Nova Lite (Bedrock) | Native tool/function calling, cost-effective for RAG Q&A |
+| Compute | AWS Lambda (×3) | Serverless, pay-per-invocation, no infra to manage |
+| Orchestration | AWS Step Functions | Runs text + image pipelines in parallel, built-in retries |
+| Infrastructure | Terraform | Declarative, versioned, single tool for all AWS resources |
+| API Exposure | API Gateway + Streamlit | REST endpoint for integrations, browser UI for end users |
 #### 1. Vector Database
 
 The vector database is AWS OpenSearch Service. The agent embeds the user question with Titan, then runs KNN search so that the query vector is compared against document embeddings in the index; the nearest neighbours by inner product are returned as context. There are three indices: products_main for product text and metadata, products_images for image descriptions, and products_videos for future video derived text.
