@@ -21,6 +21,9 @@ ahmed-bshg-case-study/
 ├── SeniorDataScientistCaseStudy.pdf
 ├── Analysis/
 │   └── Full Analysis.ipynb
+├── Application/
+│   ├── app.py
+│   └── requirements.txt
 ├── Data/
 │   └── data.jsonl
 ├── Resources/
@@ -44,11 +47,12 @@ ahmed-bshg-case-study/
     └── step_functions.tf
 ```
 
-The repository is split into 4 main sections:
+The repository is split into 5 main sections:
 1. **Analysis Notebook:** A jupyter notebook with all the EDA and initial scripts written for all of the functions and tools used, found under Analysis/
-2. **Lambda Functions:** Code for all 3 lambda functions used in the project, stored under Resources/ along with their requirements and packages
-3. **Data:** Directory to store data and documentation resources
-4. **Terraform Project:** Terraform files that are used to build resources on AWS, the backend is currently set to local.
+2. **Application:** A Streamlit chat UI that calls the invoke API so users can ask product questions in a browser
+3. **Lambda Functions:** Code for all 3 lambda functions used in the project, stored under Resources/ along with their requirements and packages
+4. **Data:** Directory to store data and documentation resources
+5. **Terraform Project:** Terraform files that are used to build resources on AWS, the backend is currently set to local.
 
 ## Technology Stack & Justifications
 
@@ -354,6 +358,20 @@ curl -X POST "https://hm3yewg3c8.execute-api.eu-central-1.amazonaws.com//invoke"
   -d '{"question": "Do you have any air fryers that are dishwasher-safe?"}'
 ```
 
+#### 5. Streamlit Application
+
+A simple chat interface is provided under `Application/` so users can talk to the RAG agent in a browser. The app uses Streamlit and sends each user message to the same invoke API endpoint used by the curl example above. Conversation history is kept in session state for the duration of the run.
+
+To run it locally, from the project root:
+
+```shell
+cd Application
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Then open the URL shown in the terminal (default http://localhost:8501). The app depends on the invoke API being deployed and reachable; the API URL is set in `app.py`.
+![img.png](Data/streamlit.png)
 ### LLM Agent Inference
 
 At query time, the user question is sent to the invoke agent Lambda, which uses **Amazon Nova Lite** on Bedrock with tool use enabled. The model can call one or both of the retrieval tools to fetch relevant products from OpenSearch before answering. The user question is embedded with Titan and compared against the text and image indices via KNN search; the tool results are returned as context so the agent can ground its reply in actual product data and avoid hallucinations.
